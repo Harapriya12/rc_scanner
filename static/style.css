@@ -1,0 +1,52 @@
+body{
+    font-family: Arial, sans-serif;
+    background:#d5a5f3;
+    text-align:center;
+    border-style: solid;
+    border-width: 1px;
+    border-color: #090909;
+    margin: 20px;
+    padding: 20px;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size:large;
+
+}
+
+.container{
+    width:500px;
+    margin:auto;
+    margin-top:80px;
+    padding:30px;
+    background:white;
+    border-radius:10px;
+    box-shadow:0 0 10px rgba(0,0,0,0.2);
+    
+    
+}
+h2{
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: x-large;
+}
+
+h1{
+    color:#2c3e50;
+}
+
+input[type="file"]{
+    margin-top:20px;
+}
+
+button{
+    margin-top:20px;
+    padding:10px 20px;
+    border:none;
+    background:#7d6006;
+    color:white;
+    font-size:16px;
+    border-radius:5px;
+    cursor:pointer;
+}
+
+button:hover{
+    background:#000000;
+}

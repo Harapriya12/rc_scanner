@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>RC Scrap Letter Generator</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<h2>Upload RC Copy</h2>
+
+<input type="file" id="fileInput">
+<button onclick="scanRC()">Scan RC</button>
+
+<h3> Fields To Be Filled</h3>
+
+Date: <input type="text" id="date"><br><br>
+City: <input type="text" id="city"><br><br>
+SIPL Number: <input type="text" id="sipl"><br><br>
+Handed Over By: <input type="text" id="handed_by"><br><br>
+Pick Up Address: <input type="text" id="pickup_address"><br><br>
+
+<button onclick="generateLetter()">Generate Scrap Letter</button>
+
+<script>
+let extractedData = {};
+
+function scanRC() {
+    let fileInput = document.getElementById("fileInput");
+    let formData = new FormData();
+    formData.append("file", fileInput.files[0]);
+
+    fetch("/scan", {
+        method: "POST",
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        extractedData = data;
+        alert("RC Scanned Successfully!");
+    });
+}
+
+function generateLetter() {
+
+    let data = {
+        ...extractedData,
+        date: document.getElementById("date").value,
+        city: document.getElementById("city").value,
+        sipl: document.getElementById("sipl").value,
+        handed_by: document.getElementById("handed_by").value,
+        pickup_address: document.getElementById("pickup_address").value
+    };
+
+    fetch("/generate_letter", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(data)
+    })
+    .then(response => response.blob())
+    .then(blob => {
+        let link = document.createElement("a");
+        link.href = window.URL.createObjectURL(blob);
+        link.download = "Scrap_Letter.docx";
+        link.click();
+    });
+}
+</script>
+
+</body>
+</html>
