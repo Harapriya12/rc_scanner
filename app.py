@@ -10,6 +10,10 @@ app = Flask(__name__)
 UPLOAD_FOLDER = "uploads"
 GENERATED_FOLDER = "generated_letters"
 
+# Ensure folders exist (important for live server)
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(GENERATED_FOLDER, exist_ok=True)
+
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
 # Tesseract configuration for Windows (local) and Linux (Render)
@@ -23,6 +27,8 @@ def extract_details(text):
 
     text = text.upper()
     clean_text = text.replace("\n", " ")
+
+    print("OCR TEXT:", text)   # Debug for Render logs
 
     # Vehicle Number
     vehicle_match = re.search(r'\b[A-Z]{2}\d{2}[A-Z]{2}\d{4}\b', clean_text)
@@ -66,19 +72,30 @@ def home():
 @app.route("/scan", methods=["POST"])
 def scan():
 
+    if "file" not in request.files:
+        return jsonify({"error": "No file uploaded"})
+
     file = request.files["file"]
+
+    if file.filename == "":
+        return jsonify({"error": "Empty filename"})
 
     filepath = os.path.join(UPLOAD_FOLDER, file.filename)
     file.save(filepath)
 
-    img = Image.open(filepath)
+    try:
+        img = Image.open(filepath)
 
-    # OCR
-    text = pytesseract.image_to_string(img)
+        # OCR
+        text = pytesseract.image_to_string(img)
 
-    details = extract_details(text)
+        details = extract_details(text)
 
-    return jsonify(details)
+        return jsonify(details)
+
+    except Exception as e:
+        print("OCR ERROR:", str(e))
+        return jsonify({"error": "OCR processing failed"})
 
 
 @app.route("/generate_letter", methods=["POST"])
@@ -108,7 +125,6 @@ def generate_letter():
                 paragraph.text = paragraph.text.replace(key, value)
 
     filename = f"{data.get('vehicle','scrap')}_Scrap_Letter.docx"
-
     output_path = os.path.join(GENERATED_FOLDER, filename)
 
     document.save(output_path)
