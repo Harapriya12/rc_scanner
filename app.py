@@ -12,7 +12,11 @@ GENERATED_FOLDER = "generated_letters"
 
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+# Tesseract configuration for Windows (local) and Linux (Render)
+if os.name == "nt":
+    pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+else:
+    pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
 
 def extract_details(text):
@@ -69,6 +73,7 @@ def scan():
 
     img = Image.open(filepath)
 
+    # OCR
     text = pytesseract.image_to_string(img)
 
     details = extract_details(text)
@@ -110,8 +115,6 @@ def generate_letter():
 
     return send_file(output_path, as_attachment=True)
 
-
-import os
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
