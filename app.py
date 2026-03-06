@@ -5,36 +5,34 @@ import os
 import re
 from docx import Document
 
-# Flask App
-app = Flask(__name__, template_folder="templates", static_folder="static")
+app = Flask(__name__)
 
-# Folders
-UPLOAD_FOLDER = "uploads"
-GENERATED_FOLDER = "generated_letters"
+# Base directory (important for Render deployment)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
+GENERATED_FOLDER = os.path.join(BASE_DIR, "generated_letters")
+TEMPLATE_PATH = os.path.join(BASE_DIR, "scrap_template.docx")
+
+# Ensure folders exist
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(GENERATED_FOLDER, exist_ok=True)
 
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
-# Tesseract path (Windows vs Render Linux)
+# Tesseract configuration
 if os.name == "nt":
     pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 else:
     pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
 
-# -----------------------------
-# OCR DATA EXTRACTION FUNCTION
-# -----------------------------
 def extract_details(text):
 
     text = text.upper()
     clean_text = text.replace("\n", " ")
 
-    print("=========== OCR TEXT ===========")
-    print(text)
-    print("================================")
+    print("OCR TEXT:", text)
 
     # Vehicle Number
     vehicle_match = re.search(r'\b[A-Z]{2}\d{2}[A-Z]{2}\d{4}\b', clean_text)
@@ -70,33 +68,11 @@ def extract_details(text):
     }
 
 
-# -----------------------------
-# HOME PAGE
-# -----------------------------
 @app.route("/")
 def home():
     return render_template("index.html")
 
 
-# -----------------------------
-# TEST ROUTE (CHECK SERVER)
-# -----------------------------
-@app.route("/test")
-def test():
-    return "Server is working!"
-
-
-# -----------------------------
-# FILE CHECK ROUTE
-# -----------------------------
-@app.route("/files")
-def files():
-    return jsonify(os.listdir())
-
-
-# -----------------------------
-# OCR SCAN ROUTE
-# -----------------------------
 @app.route("/scan", methods=["POST"])
 def scan():
 
@@ -112,88 +88,52 @@ def scan():
     file.save(filepath)
 
     try:
-
-        print("Image saved at:", filepath)
-
         img = Image.open(filepath)
 
         # OCR
-        text = pytesseract.image_to_string(img, lang="eng")
-
+        text = pytesseract.image_to_string(img)
         details = extract_details(text)
 
         return jsonify(details)
 
     except Exception as e:
-
         print("OCR ERROR:", str(e))
-
-        return jsonify({
-            "error": "OCR processing failed",
-            "message": str(e)
-        })
+        return jsonify({"error": "OCR processing failed"})
 
 
-# -----------------------------
-# LETTER GENERATION
-# -----------------------------
 @app.route("/generate_letter", methods=["POST"])
 def generate_letter():
 
-    try:
+    data = request.json
 
-        data = request.json
+    document = Document(TEMPLATE_PATH)
 
-        template_path = "scrap_template.docx"
+    replacements = {
+        "{{owner_name}}": data.get("owner", ""),
+        "{{registration_number}}": data.get("vehicle", ""),
+        "{{engine_number}}": data.get("engine", ""),
+        "{{chassis_number}}": data.get("chassis", ""),
+        "{{vehicle_model}}": data.get("model", ""),
+        "{{date}}": data.get("date", ""),
+        "{{city}}": data.get("city", ""),
+        "{{sipl}}": data.get("sipl", ""),
+        "{{handed_by}}": data.get("handed_by", ""),
+        "{{pickup_address}}": data.get("pickup_address", "")
+    }
 
-        # Check template exists
-        if not os.path.exists(template_path):
-            return jsonify({"error": "Template file missing"}), 500
+    for paragraph in document.paragraphs:
+        for key, value in replacements.items():
+            if key in paragraph.text:
+                paragraph.text = paragraph.text.replace(key, value)
 
-        document = Document(template_path)
+    filename = f"{data.get('vehicle','scrap')}_Scrap_Letter.docx"
+    output_path = os.path.join(GENERATED_FOLDER, filename)
 
-        replacements = {
-            "{{owner_name}}": data.get("owner", ""),
-            "{{registration_number}}": data.get("vehicle", ""),
-            "{{engine_number}}": data.get("engine", ""),
-            "{{chassis_number}}": data.get("chassis", ""),
-            "{{vehicle_model}}": data.get("model", ""),
-            "{{date}}": data.get("date", ""),
-            "{{city}}": data.get("city", ""),
-            "{{sipl}}": data.get("sipl", ""),
-            "{{handed_by}}": data.get("handed_by", ""),
-            "{{pickup_address}}": data.get("pickup_address", "")
-        }
+    document.save(output_path)
 
-        for paragraph in document.paragraphs:
-            for key, value in replacements.items():
-                if key in paragraph.text:
-                    paragraph.text = paragraph.text.replace(key, value)
-
-        filename = f"{data.get('vehicle','scrap')}_Scrap_Letter.docx"
-        output_path = os.path.join(GENERATED_FOLDER, filename)
-
-        document.save(output_path)
-
-        print("Letter generated:", output_path)
-
-        return send_file(output_path, as_attachment=True)
-
-    except Exception as e:
-
-        print("LETTER ERROR:", str(e))
-
-        return jsonify({
-            "error": "Letter generation failed",
-            "message": str(e)
-        })
+    return send_file(output_path, as_attachment=True)
 
 
-# -----------------------------
-# RUN APP
-# -----------------------------
 if __name__ == "__main__":
-
     port = int(os.environ.get("PORT", 10000))
-
     app.run(host="0.0.0.0", port=port)

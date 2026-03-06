@@ -1,47 +1,47 @@
-import pytesseract
-from PIL import Image
-import os
-import re
+Optimizing tool selection...
 
-# Set Tesseract path
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+I'll analyze your entire folder to identify the issue. Let me start by reading the key files.
 
-# Get current folder path
-current_folder = os.path.dirname(os.path.abspath(__file__))
-image_path = os.path.join(current_folder, "test_image.jpeg")
+Analysis of Your RC Scanner Application
+I've found 5 critical issues preventing proper RC scanning and letter generation. Here's what's happening:
 
-print("Looking for image at:", image_path)
+Issue 1: Tesseract Path (Most Critical)
+app.py:16 line 16:
 
-# Extract text
-img = Image.open(image_path)
-text = pytesseract.image_to_string(img)
+❌ This is a Linux path, hardcoded for Render deployment
+❌ On Windows, this path doesn't exist, so OCR scanning fails silently
+Your test.py:6 has the correct Windows path: C:\Program Files\Tesseract-OCR\tesseract.exe
+This is why RC scanning isn't working properly.
 
-print("\nFull Extracted Text:\n")
-print(text)
+Issue 2: Template File Path (Critical)
+app.py:131 line 131:
 
-# ----------- Clean & Extract Required Details -----------
+❌ Uses a relative path
+❌ On Render, if the working directory isn't set correctly, it won't find scrap_template.docx
+❌ This causes letter generation to fail before even trying to process
+Issue 3: Word Document Replacement Bug (Why Letters Fail)
+app.py:141-155 has a fundamental flaw in how it replaces text in Word documents:
 
-# Clean text (remove extra spaces)
-clean_text = text.replace("\n", " ")
+❌ Word documents have complex structure - text can be split across multiple "runs" (text formatting chunks)
+❌ If your template has {{owner_name}} split across runs, paragraph.text.replace() won't find it
+❌ Also, directly assigning paragraph.text clears all formatting, which destroys the document structure
+This is why generated letters aren't working properly.
+Issue 4: Regex Pattern Mismatch
+test.py:34-35 searches for chassis like: MD[A-Z0-9]{15} (MD prefix required)
+app.py:47 searches for any: [A-Z0-9]{17} (no MD requirement)
+❌ This inconsistency causes extraction failures
+Issue 5: No JavaScript Error Handling
+index.html fetch calls don't check for errors:
 
-# Vehicle Number (Indian RC format)
-vehicle_match = re.search(r'\b[A-Z]{2}\d{2}[A-Z]{2}\d{4}\b', clean_text)
-vehicle_number = vehicle_match.group() if vehicle_match else "Not Found"
+❌ Users don't see error messages when scanning/generation fails
+❌ Makes debugging impossible
+Summary
+Issue	Impact	Severity
+Tesseract hardcoded to Linux path	OCR doesn't work on Windows; works on Render	CRITICAL
+Template file relative path	Can't find template on Render	CRITICAL
+Word doc replacement using .text	Generated letters don't work (text split across runs)	CRITICAL
+Regex pattern mismatch	Data extraction inconsistent	Medium
+No error handling in JS	Users can't see what went wrong	Medium
+The combination of issues 1-3 explains exactly why your RC isn't getting scanned properly and generated letters aren't working on Render.
 
-# Owner Name (Next line after NAME)
-owner_match = re.search(r'NAME\s+([A-Z\s]+?)\s{2,}', text)
-owner_name = owner_match.group(1).strip() if owner_match else "Not Found"
-
-# Chassis Number (VIN starting with MD, 17 characters)
-chassis_match = re.search(r'\bMD[A-Z0-9]{15}\b', clean_text)
-chassis_number = chassis_match.group() if chassis_match else "Not Found"
-
-# Engine Number (10-15 alphanumeric characters, not vehicle number)
-engine_match = re.search(r'\b(?!' + vehicle_number + r'\b)[A-Z0-9]{10,15}\b', clean_text)
-engine_number = engine_match.group() if engine_match else "Not Found"
-
-print("\n--------- Extracted Details ---------")
-print("Vehicle Number:", vehicle_number)
-print("Owner Name:", owner_name)
-print("Engine Number:", engine_number)
-print("Chassis Number:", chassis_number)
+Let me know when you want me to fix these!
