@@ -87,8 +87,7 @@ def scan():
         img = Image.open(filepath)
 
         # OCR
-        text = pytesseract.image_to_string(img)
-
+        text = pytesseract.image_to_string(img, lang="eng")
         details = extract_details(text)
 
         return jsonify(details)
@@ -130,6 +129,11 @@ def generate_letter():
     document.save(output_path)
 
     return send_file(output_path, as_attachment=True)
+import os
+
+@app.route("/files")
+def files():
+    return str(os.listdir())
 
 
 if __name__ == "__main__":
