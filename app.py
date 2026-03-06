@@ -10,25 +10,29 @@ app = Flask(__name__)
 UPLOAD_FOLDER = "uploads"
 GENERATED_FOLDER = "generated_letters"
 
-# Ensure folders exist (important for live server)
+# Ensure folders exist
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(GENERATED_FOLDER, exist_ok=True)
 
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
-# Tesseract configuration for Windows (local) and Linux (Render)
+# Tesseract path for Windows / Render Linux
 if os.name == "nt":
     pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 else:
     pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
 
+# ================================
+# OCR TEXT EXTRACTION
+# ================================
+
 def extract_details(text):
 
     text = text.upper()
     clean_text = text.replace("\n", " ")
 
-    print("OCR TEXT:", text)   # Debug for Render logs
+    print("OCR TEXT:", text)
 
     # Vehicle Number
     vehicle_match = re.search(r'\b[A-Z]{2}\d{2}[A-Z]{2}\d{4}\b', clean_text)
@@ -55,7 +59,7 @@ def extract_details(text):
     model_match = re.search(r'MODEL\s*[:\-]?\s*([A-Z0-9 ]+)', text)
     model = model_match.group(1).strip() if model_match else ""
 
-    return {
+    details = {
         "owner": owner,
         "vehicle": vehicle,
         "engine": engine,
@@ -63,11 +67,23 @@ def extract_details(text):
         "model": model
     }
 
+    print("EXTRACTED DETAILS:", details)
+
+    return details
+
+
+# ================================
+# HOME PAGE
+# ================================
 
 @app.route("/")
 def home():
     return render_template("index.html")
 
+
+# ================================
+# OCR SCAN API
+# ================================
 
 @app.route("/scan", methods=["POST"])
 def scan():
@@ -84,25 +100,38 @@ def scan():
     file.save(filepath)
 
     try:
+
         img = Image.open(filepath)
 
         # OCR
         text = pytesseract.image_to_string(img, lang="eng")
+
         details = extract_details(text)
 
         return jsonify(details)
 
     except Exception as e:
+
         print("OCR ERROR:", str(e))
         return jsonify({"error": "OCR processing failed"})
 
+
+# ================================
+# DOCX GENERATION
+# ================================
 
 @app.route("/generate_letter", methods=["POST"])
 def generate_letter():
 
     data = request.json
 
+    print("DATA RECEIVED:", data)
+
     template_path = "scrap_template.docx"
+
+    if not os.path.exists(template_path):
+        return jsonify({"error": "Template file missing on server"})
+
     document = Document(template_path)
 
     replacements = {
@@ -118,23 +147,36 @@ def generate_letter():
         "{{pickup_address}}": data.get("pickup_address", "")
     }
 
+    # Replace placeholders safely (handles Word runs)
     for paragraph in document.paragraphs:
         for key, value in replacements.items():
             if key in paragraph.text:
-                paragraph.text = paragraph.text.replace(key, value)
+                for run in paragraph.runs:
+                    if key in run.text:
+                        run.text = run.text.replace(key, value)
 
     filename = f"{data.get('vehicle','scrap')}_Scrap_Letter.docx"
     output_path = os.path.join(GENERATED_FOLDER, filename)
 
     document.save(output_path)
 
+    print("DOCUMENT GENERATED:", output_path)
+
     return send_file(output_path, as_attachment=True)
-import os
+
+
+# ================================
+# DEBUG ROUTE (CHECK SERVER FILES)
+# ================================
 
 @app.route("/files")
 def files():
     return str(os.listdir())
 
+
+# ================================
+# RUN SERVER
+# ================================
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
