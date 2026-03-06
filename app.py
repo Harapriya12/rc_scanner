@@ -5,34 +5,36 @@ import os
 import re
 from docx import Document
 
-app = Flask(__name__)
+# Flask App
+app = Flask(__name__, template_folder="templates", static_folder="static")
 
+# Folders
 UPLOAD_FOLDER = "uploads"
 GENERATED_FOLDER = "generated_letters"
 
-# Ensure folders exist
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(GENERATED_FOLDER, exist_ok=True)
 
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 
-# Tesseract path for Windows / Render Linux
+# Tesseract path (Windows vs Render Linux)
 if os.name == "nt":
     pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 else:
     pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
 
-# ================================
-# OCR TEXT EXTRACTION
-# ================================
-
+# -----------------------------
+# OCR DATA EXTRACTION FUNCTION
+# -----------------------------
 def extract_details(text):
 
     text = text.upper()
     clean_text = text.replace("\n", " ")
 
-    print("OCR TEXT:", text)
+    print("=========== OCR TEXT ===========")
+    print(text)
+    print("================================")
 
     # Vehicle Number
     vehicle_match = re.search(r'\b[A-Z]{2}\d{2}[A-Z]{2}\d{4}\b', clean_text)
@@ -59,7 +61,7 @@ def extract_details(text):
     model_match = re.search(r'MODEL\s*[:\-]?\s*([A-Z0-9 ]+)', text)
     model = model_match.group(1).strip() if model_match else ""
 
-    details = {
+    return {
         "owner": owner,
         "vehicle": vehicle,
         "engine": engine,
@@ -67,24 +69,34 @@ def extract_details(text):
         "model": model
     }
 
-    print("EXTRACTED DETAILS:", details)
 
-    return details
-
-
-# ================================
+# -----------------------------
 # HOME PAGE
-# ================================
-
+# -----------------------------
 @app.route("/")
 def home():
     return render_template("index.html")
 
 
-# ================================
-# OCR SCAN API
-# ================================
+# -----------------------------
+# TEST ROUTE (CHECK SERVER)
+# -----------------------------
+@app.route("/test")
+def test():
+    return "Server is working!"
 
+
+# -----------------------------
+# FILE CHECK ROUTE
+# -----------------------------
+@app.route("/files")
+def files():
+    return jsonify(os.listdir())
+
+
+# -----------------------------
+# OCR SCAN ROUTE
+# -----------------------------
 @app.route("/scan", methods=["POST"])
 def scan():
 
@@ -101,6 +113,8 @@ def scan():
 
     try:
 
+        print("Image saved at:", filepath)
+
         img = Image.open(filepath)
 
         # OCR
@@ -113,71 +127,73 @@ def scan():
     except Exception as e:
 
         print("OCR ERROR:", str(e))
-        return jsonify({"error": "OCR processing failed"})
+
+        return jsonify({
+            "error": "OCR processing failed",
+            "message": str(e)
+        })
 
 
-# ================================
-# DOCX GENERATION
-# ================================
-
+# -----------------------------
+# LETTER GENERATION
+# -----------------------------
 @app.route("/generate_letter", methods=["POST"])
 def generate_letter():
 
-    data = request.json
+    try:
 
-    print("DATA RECEIVED:", data)
+        data = request.json
 
-    template_path = "scrap_template.docx"
+        template_path = "scrap_template.docx"
 
-    if not os.path.exists(template_path):
-        return jsonify({"error": "Template file missing on server"})
+        # Check template exists
+        if not os.path.exists(template_path):
+            return jsonify({"error": "Template file missing"}), 500
 
-    document = Document(template_path)
+        document = Document(template_path)
 
-    replacements = {
-        "{{owner_name}}": data.get("owner", ""),
-        "{{registration_number}}": data.get("vehicle", ""),
-        "{{engine_number}}": data.get("engine", ""),
-        "{{chassis_number}}": data.get("chassis", ""),
-        "{{vehicle_model}}": data.get("model", ""),
-        "{{date}}": data.get("date", ""),
-        "{{city}}": data.get("city", ""),
-        "{{sipl}}": data.get("sipl", ""),
-        "{{handed_by}}": data.get("handed_by", ""),
-        "{{pickup_address}}": data.get("pickup_address", "")
-    }
+        replacements = {
+            "{{owner_name}}": data.get("owner", ""),
+            "{{registration_number}}": data.get("vehicle", ""),
+            "{{engine_number}}": data.get("engine", ""),
+            "{{chassis_number}}": data.get("chassis", ""),
+            "{{vehicle_model}}": data.get("model", ""),
+            "{{date}}": data.get("date", ""),
+            "{{city}}": data.get("city", ""),
+            "{{sipl}}": data.get("sipl", ""),
+            "{{handed_by}}": data.get("handed_by", ""),
+            "{{pickup_address}}": data.get("pickup_address", "")
+        }
 
-    # Replace placeholders safely (handles Word runs)
-    for paragraph in document.paragraphs:
-        for key, value in replacements.items():
-            if key in paragraph.text:
-                for run in paragraph.runs:
-                    if key in run.text:
-                        run.text = run.text.replace(key, value)
+        for paragraph in document.paragraphs:
+            for key, value in replacements.items():
+                if key in paragraph.text:
+                    paragraph.text = paragraph.text.replace(key, value)
 
-    filename = f"{data.get('vehicle','scrap')}_Scrap_Letter.docx"
-    output_path = os.path.join(GENERATED_FOLDER, filename)
+        filename = f"{data.get('vehicle','scrap')}_Scrap_Letter.docx"
+        output_path = os.path.join(GENERATED_FOLDER, filename)
 
-    document.save(output_path)
+        document.save(output_path)
 
-    print("DOCUMENT GENERATED:", output_path)
+        print("Letter generated:", output_path)
 
-    return send_file(output_path, as_attachment=True)
+        return send_file(output_path, as_attachment=True)
 
+    except Exception as e:
 
-# ================================
-# DEBUG ROUTE (CHECK SERVER FILES)
-# ================================
+        print("LETTER ERROR:", str(e))
 
-@app.route("/files")
-def files():
-    return str(os.listdir())
+        return jsonify({
+            "error": "Letter generation failed",
+            "message": str(e)
+        })
 
 
-# ================================
-# RUN SERVER
-# ================================
-
+# -----------------------------
+# RUN APP
+# -----------------------------
 if __name__ == "__main__":
+
     port = int(os.environ.get("PORT", 10000))
+
     app.run(host="0.0.0.0", port=port)
