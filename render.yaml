@@ -1,8 +1,0 @@
-services:
-
-  type: web
-  name: rc-scanner
-  runtime: python
-  buildCommand: bash build.sh
-  startCommand: gunicorn app:app
-  plan: free
