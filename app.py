@@ -88,7 +88,7 @@ def scan():
     file.save(filepath)
 
     try:
-        img = Image.open(filepath)
+        img = Image.open(filepath).convert("RGB")
 
         # OCR
         text = pytesseract.image_to_string(img)
