@@ -1,6 +1,6 @@
 services:
 
- type: web
+  type: web
   name: rc-scanner
   runtime: python
   buildCommand: bash build.sh
