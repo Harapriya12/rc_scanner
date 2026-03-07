@@ -105,6 +105,7 @@ def scan():
 def generate_letter():
 
     data = request.json
+    print("DATA RECEIVED:", data)
 
     document = Document(TEMPLATE_PATH)
 
