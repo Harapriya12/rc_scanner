@@ -4,20 +4,12 @@ from PIL import Image
 import os
 import re
 from docx import Document
-import uuid
-from datetime import datetime
-import logging
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Base directory
+# Base directory (important for Render deployment)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Folders configuration
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
 GENERATED_FOLDER = os.path.join(BASE_DIR, "generated_letters")
 TEMPLATE_PATH = os.path.join(BASE_DIR, "scrap_template.docx")
@@ -27,29 +19,22 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(GENERATED_FOLDER, exist_ok=True)
 
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
-app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16MB max file size
 
-# Allowed file extensions
-ALLOWED_EXTENSIONS = {'jpg', 'jpeg', 'png', 'pdf'}
-
-# Tesseract path (Docker has it in PATH)
-pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
-
-
-def allowed_file(filename):
-    """Check if file extension is allowed"""
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+# Tesseract configuration
+if os.name == "nt":
+    pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+else:
+    pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
 
 def extract_details(text):
-    """Extract vehicle details from OCR text"""
+
     text = text.upper()
     clean_text = text.replace("\n", " ")
 
-    logger.info("OCR TEXT: %s", text)
+    print("OCR TEXT:", text)
 
-    # Vehicle Number (e.g., MH02AB1234)
+    # Vehicle Number
     vehicle_match = re.search(r'\b[A-Z]{2}\d{2}[A-Z]{2}\d{4}\b', clean_text)
     vehicle = vehicle_match.group() if vehicle_match else ""
 
@@ -57,11 +42,11 @@ def extract_details(text):
     owner_match = re.search(r'NAME\s+([A-Z\s]+)', text)
     owner = owner_match.group(1).strip() if owner_match else ""
 
-    # Chassis Number (17 characters)
+    # Chassis Number
     chassis_match = re.search(r'\b[A-Z0-9]{17}\b', clean_text)
     chassis = chassis_match.group() if chassis_match else ""
 
-    # Engine Number (10-12 characters)
+    # Engine Number
     engine_matches = re.findall(r'\b[A-Z0-9]{10,12}\b', clean_text)
     engine = ""
 
@@ -85,118 +70,70 @@ def extract_details(text):
 
 @app.route("/")
 def home():
-    """Home page with upload form"""
     return render_template("index.html")
 
 
 @app.route("/scan", methods=["POST"])
 def scan():
-    """Scan vehicle document and extract details"""
+
     if "file" not in request.files:
-        return jsonify({"error": "No file uploaded"}), 400
+        return jsonify({"error": "No file uploaded"})
 
     file = request.files["file"]
 
     if file.filename == "":
-        return jsonify({"error": "Empty filename"}), 400
+        return jsonify({"error": "Empty filename"})
 
-    # Validate file type
-    if not allowed_file(file.filename):
-        return jsonify({"error": "Invalid file type. Allowed: jpg, jpeg, png, pdf"}), 400
-
-    # Generate unique filename
-    filename = f"{uuid.uuid4()}_{file.filename}"
-    filepath = os.path.join(UPLOAD_FOLDER, filename)
+    filepath = os.path.join(UPLOAD_FOLDER, file.filename)
+    file.save(filepath)
 
     try:
-        file.save(filepath)
-        img = Image.open(filepath).convert("RGB")
+        img = Image.open(filepath)
 
-        # Perform OCR
-        text = pytesseract.image_to_string(img)
+        # OCR
+        text = pytesseract.image_to_string(img, lang="eng")
         details = extract_details(text)
 
-        # Clean up uploaded file
-        if os.path.exists(filepath):
-            os.remove(filepath)
-
-        return jsonify({
-            "success": True,
-            "details": details
-        })
+        return jsonify(details)
 
     except Exception as e:
-        logger.error("OCR ERROR: %s", str(e))
-        return jsonify({"error": "OCR processing failed"}), 500
+        print("OCR ERROR:", str(e))
+        return jsonify({"error": "OCR processing failed"})
 
 
 @app.route("/generate_letter", methods=["POST"])
 def generate_letter():
-    """Generate scrap letter document"""
+
     data = request.json
 
-    if not data:
-        return jsonify({"error": "No data provided"}), 400
+    document = Document(TEMPLATE_PATH)
 
-    # Check if template exists
-    if not os.path.exists(TEMPLATE_PATH):
-        logger.error("Template file not found: %s", TEMPLATE_PATH)
-        return jsonify({"error": "Template file not found"}), 500
+    replacements = {
+        "{{owner_name}}": data.get("owner", ""),
+        "{{registration_number}}": data.get("vehicle", ""),
+        "{{engine_number}}": data.get("engine", ""),
+        "{{chassis_number}}": data.get("chassis", ""),
+        "{{vehicle_model}}": data.get("model", ""),
+        "{{date}}": data.get("date", ""),
+        "{{city}}": data.get("city", ""),
+        "{{sipl}}": data.get("sipl", ""),
+        "{{handed_by}}": data.get("handed_by", ""),
+        "{{pickup_address}}": data.get("pickup_address", "")
+    }
 
-    try:
-        document = Document(TEMPLATE_PATH)
+    for paragraph in document.paragraphs:
+        for key, value in replacements.items():
+            if key in paragraph.text:
+                paragraph.text = paragraph.text.replace(key, value)
 
-        replacements = {
-            "{{owner_name}}": data.get("owner", ""),
-            "{{registration_number}}": data.get("vehicle", ""),
-            "{{engine_number}}": data.get("engine", ""),
-            "{{chassis_number}}": data.get("chassis", ""),
-            "{{vehicle_model}}": data.get("model", ""),
-            "{{date}}": data.get("date", datetime.now().strftime("%d-%m-%Y")),
-            "{{city}}": data.get("city", ""),
-            "{{sipl}}": data.get("sipl", ""),
-            "{{handed_by}}": data.get("handed_by", ""),
-            "{{pickup_address}}": data.get("pickup_address", "")
-        }
+    filename = f"{data.get('vehicle','scrap')}_Scrap_Letter.docx"
+    output_path = os.path.join(GENERATED_FOLDER, filename)
 
-        # Replace placeholders in document
-        for paragraph in document.paragraphs:
-            for key, value in replacements.items():
-                if key in paragraph.text:
-                    paragraph.text = paragraph.text.replace(key, value)
+    document.save(output_path)
 
-        # Generate filename
-        vehicle = data.get('vehicle', 'scrap')
-        filename = f"{vehicle}_Scrap_Letter.docx"
-        output_path = os.path.join(GENERATED_FOLDER, filename)
-
-        # Save document
-        document.save(output_path)
-
-        # Send file to user
-        return send_file(
-            output_path,
-            as_attachment=True,
-            download_name=filename,
-            mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        )
-
-    except Exception as e:
-        logger.error("Document generation error: %s", str(e))
-        return jsonify({"error": "Document generation failed"}), 500
-
-
-@app.route("/health", methods=["GET"])
-def health_check():
-    """Health check endpoint"""
-    return jsonify({
-        "status": "healthy",
-        "service": "vehicle-ocr-app",
-        "timestamp": datetime.now().isoformat()
-    })
+    return send_file(output_path, as_attachment=True)
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))  # Render uses 8080
-    logger.info(f"Starting app on port {port}")
-    app.run(host="0.0.0.0", port=port, debug=False)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
